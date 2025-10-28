@@ -1,0 +1,16 @@
+# Node dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+build/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
