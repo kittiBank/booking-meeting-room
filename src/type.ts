@@ -14,3 +14,5 @@ export interface Booking {
   time: string
   createdAt: string
 }
+
+
