@@ -2,12 +2,11 @@
   <div class="booking-room">
     <h1>Booking Room</h1>
 
-    <!-- Top bar booking form -->
     <div class="top-bar-form">
       <!-- Room -->
       <div class="form-group">
         <label>Room</label>
-        <select v-model="selectedRoom">
+        <select v-model.number="selectedRoom">
           <option disabled value="">Select Room</option>
           <option v-for="room in rooms" :key="room.id" :value="room.id">
             {{ room.name }} (Capacity: {{ room.capacity }})
@@ -21,34 +20,28 @@
         <input type="text" v-model="fullName" />
       </div>
 
-      <!-- Start Date -->
+      <!-- Start Date & Time -->
       <div class="form-group">
         <label>Start Date</label>
         <input type="date" v-model="startDate" />
       </div>
-
-      <!-- Start Time -->
       <div class="form-group">
         <label>Start Time</label>
         <select v-model="startTime">
-          <option disabled value="">Select Start Time</option>
           <option v-for="slot in timeSlots" :key="slot" :value="slot">
             {{ slot }}
           </option>
         </select>
       </div>
 
-      <!-- End Date -->
+      <!-- End Date & Time -->
       <div class="form-group">
         <label>End Date</label>
         <input type="date" v-model="endDate" />
       </div>
-
-      <!-- End Time -->
       <div class="form-group">
         <label>End Time</label>
         <select v-model="endTime">
-          <option disabled value="">Select End Time</option>
           <option v-for="slot in timeSlots" :key="slot" :value="slot">
             {{ slot }}
           </option>
@@ -61,9 +54,9 @@
       </div>
     </div>
 
-    <!-- Last 5 Bookings -->
+    <!-- Last Bookings -->
     <div class="last-bookings">
-      <h2>Last 5 Bookings</h2>
+      <h2>Last Bookings</h2>
       <table>
         <thead>
           <tr>
@@ -75,10 +68,12 @@
         </thead>
         <tbody>
           <tr v-for="booking in lastBookings" :key="booking.id">
-            <td>{{ getRoomName(booking.roomId) }}</td>
+            <td>{{ booking.room }}</td>
             <td>{{ booking.user }}</td>
-            <td>{{ formatDateTime(booking.start) }}</td>
-            <td>{{ formatDateTime(booking.end) }}</td>
+            <td>
+              {{ formatDateTime(booking.start_date, booking.start_time) }}
+            </td>
+            <td>{{ formatDateTime(booking.end_date, booking.end_time) }}</td>
           </tr>
         </tbody>
       </table>
@@ -87,98 +82,188 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
+import axios from "axios";
 
-// Rooms
-const rooms = reactive([
-  { id: 1, name: "Room 101", capacity: 4 },
-  { id: 2, name: "Room 102", capacity: 6 },
-  { id: 3, name: "Room 103", capacity: 8 },
-]);
+interface Room {
+  id: number;
+  name: string;
+  capacity: number;
+}
+
+interface Booking {
+  id: number;
+  room: string;
+  user: string;
+  start_date: string;
+  start_time: string;
+  end_date: string;
+  end_time: string;
+  status?: string;
+}
+
+// Form state
+const selectedRoom = ref<number | null>(null);
+const fullName = ref("");
+const startDate = ref("");
+const startTime = ref("");
+const endDate = ref("");
+const endTime = ref("");
 
 // Time slots
 const timeSlots = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
+  "09:00:00",
+  "10:00:00",
+  "11:00:00",
+  "12:00:00",
+  "13:00:00",
+  "14:00:00",
+  "15:00:00",
+  "16:00:00",
+  "17:00:00",
 ];
 
-// Form state
-let selectedRoom = "";
-let fullName = "";
-let startDate = "";
-let startTime = "";
-let endDate = "";
-let endTime = "";
+// Rooms & bookings
+const rooms = ref<Room[]>([]);
+const bookings = ref<Booking[]>([]);
+const lastBookings = computed(() => bookings.value.slice(-5).reverse());
 
-// Load bookings
-const bookings = reactive(JSON.parse(localStorage.getItem("bookings") || "[]"));
-const lastBookings = computed(() => bookings.slice(-5).reverse());
-
-function getRoomName(roomId: number) {
-  const room = rooms.find((r) => r.id === roomId);
-  return room ? room.name : "Unknown";
+// Fetch rooms
+async function fetchRooms() {
+  try {
+    const res = await axios.get<Room[]>("http://localhost:5001/api/rooms");
+    rooms.value = res.data;
+    if (rooms.value.length > 0 && selectedRoom.value === null) {
+      selectedRoom.value = rooms.value[0].id; // default room
+    }
+  } catch (err) {
+    console.error("Error fetching rooms:", err);
+  }
 }
 
-// Format date time dd-mm-yyyy HH:mm
-function formatDateTime(dateStr: string) {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yyyy = date.getFullYear();
-  const hh = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+// Fetch bookings
+async function fetchBookings() {
+  try {
+    const res = await axios.get<Booking[]>(
+      "http://localhost:5001/api/bookings"
+    );
+    bookings.value = res.data.map((b) => ({
+      ...b,
+      status: b.status || "Confirmed",
+    }));
+  } catch (err) {
+    console.error("Error fetching bookings:", err);
+  }
 }
 
-// Booking function
-function bookRoom() {
+// Format date-time
+function formatDateTime(dateStr: String, timeStr: String) {
+  if (!dateStr || !timeStr) return "";
+  const [y, m, d] = dateStr.split("-");
+  const [h, min] = timeStr.split(":");
+  return `${d}/${m}/${y} ${h}:${min}`;
+}
+
+// Combine date + time slot
+function combineDateTime(date: string, time: string) {
+  if (!date || !time) return null;
+
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, min, s] = time.split(":").map(Number);
+
+  // +7 timezone => บวก 7 ชั่วโมง
+  // Node/Vue จะเข้าใจเป็น local time
+  const dateObj = new Date(y, m - 1, d, h, min, s);
+
+  return dateObj;
+}
+
+// Book room
+async function bookRoom() {
   if (
-    !selectedRoom ||
-    !fullName ||
-    !startDate ||
-    !startTime ||
-    !endDate ||
-    !endTime
+    selectedRoom.value === null ||
+    !fullName.value ||
+    !startDate.value ||
+    !startTime.value ||
+    !endDate.value ||
+    !endTime.value
   ) {
-    alert("Please fill in all fields");
+    console.log({
+      selectedRoom: selectedRoom.value,
+      fullName: fullName.value,
+      startDate: startDate.value,
+      startTime: startTime.value,
+      endDate: endDate.value,
+      endTime: endTime.value,
+    });
+    alert("All fields are required");
     return;
   }
 
-  const start = new Date(`${startDate}T${startTime}`);
-  const end = new Date(`${endDate}T${endTime}`);
+  const startDateTime = combineDateTime(startDate.value, startTime.value);
+  const endDateTime = combineDateTime(endDate.value, endTime.value);
 
-  if (start >= end) {
+  if (!startDateTime || !endDateTime) {
+    alert("Invalid start or end date/time");
+    return;
+  }
+
+  if (startDateTime >= endDateTime) {
     alert("End time must be after start time");
     return;
   }
 
-  bookings.push({
-    id: Date.now(),
-    roomId: Number(selectedRoom),
-    user: fullName,
-    start: start.toISOString(),
-    end: end.toISOString(),
-  });
-  localStorage.setItem("bookings", JSON.stringify(bookings));
+  try {
+    const res = await axios.post<Booking>(
+      "http://localhost:5001/api/bookings",
+      {
+        room_id: selectedRoom.value,
+        name: fullName.value,
+        start_date: startDate.value,
+        end_date: endDate.value,
+        start_time: startTime.value,
+        end_time: endTime.value,
+      }
+    );
 
-  alert("Booked successfully!");
+    bookings.value.push({
+      id: res.data.id,
+      room:
+        rooms.value.find((r) => r.id === selectedRoom.value)?.name || "Unknown",
+      user: fullName.value,
+      start_date: startDate.value,
+      start_time: startTime.value,
+      end_date: endDate.value,
+      end_time: endTime.value,
+      status: "Confirmed",
+    });
 
-  // Reset
-  selectedRoom = "";
-  fullName = "";
-  startDate = "";
-  startTime = "";
-  endDate = "";
-  endTime = "";
+    // Reset
+    const today = new Date().toISOString().slice(0, 10);
+    startDate.value = today;
+    endDate.value = today;
+    startTime.value = timeSlots[0];
+    endTime.value = timeSlots[0];
+    fullName.value = "";
+    selectedRoom.value = rooms.value.length > 0 ? rooms.value[0].id : null;
+
+    alert("Booked successfully!");
+  } catch (err: any) {
+    alert(err.response?.data?.message || "Failed to book room");
+    console.error(err);
+  }
 }
+
+// Initial load
+onMounted(() => {
+  fetchRooms();
+  fetchBookings();
+  const today = new Date().toISOString().slice(0, 10);
+  startDate.value = today;
+  endDate.value = today;
+  startTime.value = timeSlots[0];
+  endTime.value = timeSlots[0];
+});
 </script>
 
 <style scoped>

@@ -76,30 +76,57 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 
-const rooms = ref([
-  { id: 1, name: "Meeting A", capacity: 10, status: "Available" },
-  { id: 2, name: "Meeting B", capacity: 20, status: "Maintenance" },
-  { id: 3, name: "Meeting C", capacity: 15, status: "Closed" },
-]);
-
+const rooms = ref([]);
 const currentRoom = ref({ name: "", capacity: 1, status: "Available" });
 const isEdit = ref(false);
 
-const saveRoom = () => {
-  if (isEdit.value) {
-    // Update
-    const index = rooms.value.findIndex((r) => r.id === currentRoom.value.id);
-    if (index !== -1) rooms.value[index] = { ...currentRoom.value };
-  } else {
-    // Add new
-    const newId = rooms.value.length
-      ? Math.max(...rooms.value.map((r) => r.id)) + 1
-      : 1;
-    rooms.value.push({ ...currentRoom.value, id: newId });
+// Fetch data
+const fetchRooms = async () => {
+  try {
+    const res = await fetch("http://localhost:5001/api/rooms");
+    if (!res.ok) throw new Error("Failed to fetch rooms");
+    rooms.value = await res.json();
+  } catch (err) {
+    console.error(err);
+    alert("Cannot load rooms. Check server.");
   }
-  resetForm();
+};
+
+// Save room
+const saveRoom = async () => {
+  try {
+    if (isEdit.value) {
+      // Update room
+      const res = await fetch(
+        `http://localhost:5001/api/rooms/${currentRoom.value.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(currentRoom.value),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to update room");
+      const updated = await res.json();
+      const index = rooms.value.findIndex((r) => r.id === updated.id);
+      if (index !== -1) rooms.value[index] = updated;
+    } else {
+      // Add new room
+      const res = await fetch("http://localhost:5001/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentRoom.value),
+      });
+      if (!res.ok) throw new Error("Failed to add room");
+      const newRoom = await res.json();
+      rooms.value.push(newRoom);
+    }
+    resetForm();
+  } catch (err) {
+    console.error(err);
+    alert(err.message);
+  }
 };
 
 const editRoom = (room) => {
@@ -112,12 +139,24 @@ const resetForm = () => {
   isEdit.value = false;
 };
 
-const deleteRoom = (room) => {
-  if (confirm(`Are you sure you want to delete room "${room.name}"?`)) {
+const deleteRoom = async (room) => {
+  if (!confirm(`Are you sure you want to delete room "${room.name}"?`)) return;
+  try {
+    const res = await fetch(
+      `http://localhost:5001/api/rooms/${Number(room.id)}`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!res.ok) throw new Error("Failed to delete room");
     rooms.value = rooms.value.filter((r) => r.id !== room.id);
+  } catch (err) {
+    console.error(err);
+    alert(err.message);
   }
 };
 
+// Status room
 const statusClass = (status) => {
   switch (status) {
     case "Available":
@@ -130,6 +169,9 @@ const statusClass = (status) => {
       return "";
   }
 };
+
+// Fetch rooms on mount
+onMounted(fetchRooms);
 </script>
 
 <style>
